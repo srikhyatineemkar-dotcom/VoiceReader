@@ -1,18 +1,18 @@
 // ── State ──
-let selectedText  = "";
+let selectedText   = "";
 let selectedGender = "female";
-let selectedTone  = "natural";
-let speechRate    = 1.0;
-let sentences     = [];
+let selectedTone   = "natural";
+let speechRate     = 1.0;
+let sentences      = [];
 let currentSentenceIndex = 0;
-let isPlaying     = false;
-let isPaused      = false;
-let allVoices     = [];
-let stopFlag      = false;
+let isPlaying      = false;
+let isPaused       = false;
+let allVoices      = [];
+let stopFlag       = false;
 let currentAPIAudio = null;
-let provider      = "browser";
-let openaiKey     = "";
-let elevenLabsKey = "";
+let provider       = "browser";
+let openaiKey      = "";
+let elevenLabsKey  = "";
 
 // ── Voice maps ──
 const TONE_PRESETS = {
@@ -24,8 +24,8 @@ const TONE_PRESETS = {
 };
 
 const OPENAI_VOICES = {
-  male:   { natural:"echo",   podcast:"onyx",    calm:"echo",   professor:"onyx",   news:"onyx"    },
-  female: { natural:"nova",   podcast:"shimmer", calm:"alloy",  professor:"fable",  news:"shimmer" }
+  male:   { natural:"echo",  podcast:"onyx",   calm:"echo",  professor:"onyx",  news:"onyx"    },
+  female: { natural:"nova",  podcast:"shimmer",calm:"alloy", professor:"fable", news:"shimmer" }
 };
 
 const EL_VOICES = {
@@ -36,7 +36,7 @@ const EL_VOICES = {
 const MALE_KW   = ["male","david","mark","daniel","james","tom","fred","albert","ralph","bruce","zarvox","junior","bad news","boing","bubbles","deranged","hysterical","trinoids","cellos","bahh","aaron"];
 const FEMALE_KW = ["female","samantha","victoria","karen","moira","tessa","fiona","kate","susan","alice","veena","ava","allison","emily","joanna","salli","kendra","kimberly","ivy","amy","emma","olivia","aria"];
 
-// ── DOM ──
+// ── DOM refs ──
 const $ = id => document.getElementById(id);
 const textBox        = $("textBox");
 const wordCountEl    = $("wordCount");
@@ -55,6 +55,22 @@ const statusText     = $("statusText");
 const progressFill   = $("progressFill");
 const progressLbl    = $("progressLbl");
 const apiBadge       = $("apiBadge");
+const speedSlider    = $("speedSlider");
+const speedVal       = $("speedVal");
+
+// ── Event listeners (no inline handlers) ──
+$("btnSettings").addEventListener("click", () => chrome.runtime.openOptionsPage());
+$("btnMale").addEventListener("click",   () => selectGender("male"));
+$("btnFemale").addEventListener("click", () => selectGender("female"));
+btnPlay.addEventListener("click",   handlePlayStop);
+btnPause.addEventListener("click",  handlePause);
+btnReplay.addEventListener("click", handleReplay);
+btnSkip.addEventListener("click",   handleSkip);
+speedSlider.addEventListener("input", () => updateSpeed(speedSlider.value));
+
+document.querySelectorAll(".tone-btn").forEach(btn => {
+  btn.addEventListener("click", () => selectTone(btn.dataset.tone));
+});
 
 // ── Voice loading ──
 function loadVoices() {
@@ -72,13 +88,13 @@ function pickVoice(gender) {
   return pool.find(v => kw.some(k => v.name.toLowerCase().includes(k))) || pool[0] || null;
 }
 
-// ── Text chunking ──
+// ── Text helpers ──
 function splitSentences(text) {
   const raw = text.match(/[^.!?]+[.!?]*["'\u201d]?\s*/g) || [text];
   return raw.map(s => s.trim()).filter(s => s.length > 0);
 }
 
-function chunkSentences(sents, maxChars = 3800) {
+function chunkSentences(sents, maxChars) {
   const chunks = []; let cur = "";
   for (const s of sents) {
     if (cur.length + s.length > maxChars) { if (cur.trim()) chunks.push(cur.trim()); cur = s; }
@@ -88,7 +104,7 @@ function chunkSentences(sents, maxChars = 3800) {
   return chunks.length ? chunks : [sents.join(" ")];
 }
 
-// ── API TTS ──
+// ── API TTS fetch ──
 async function fetchTTSChunk(text) {
   if (provider === "openai" && openaiKey) {
     const voice = OPENAI_VOICES[selectedGender]?.[selectedTone] || "nova";
@@ -101,9 +117,9 @@ async function fetchTTSChunk(text) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error?.message || `OpenAI error ${res.status}`);
     }
-    return await res.arrayBuffer();
-
-  } else if (provider === "elevenlabs" && elevenLabsKey) {
+    return res.arrayBuffer();
+  }
+  if (provider === "elevenlabs" && elevenLabsKey) {
     const voiceId = EL_VOICES[selectedGender]?.[selectedTone] || "21m00Tcm4TlvDq8ikWAM";
     const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: "POST",
@@ -114,7 +130,7 @@ async function fetchTTSChunk(text) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.detail?.message || `ElevenLabs error ${res.status}`);
     }
-    return await res.arrayBuffer();
+    return res.arrayBuffer();
   }
   throw new Error("No API provider configured");
 }
@@ -135,7 +151,8 @@ function playBuffer(buffer) {
 async function playWithAPI() {
   stopFlag = false;
   setStatus("loading");
-  const chunks = chunkSentences(sentences, provider === "elevenlabs" ? 2400 : 3800);
+  const maxChars = provider === "elevenlabs" ? 2400 : 3800;
+  const chunks   = chunkSentences(sentences, maxChars);
 
   for (let i = 0; i < chunks.length; i++) {
     if (stopFlag) break;
@@ -147,7 +164,7 @@ async function playWithAPI() {
       await playBuffer(buffer);
     } catch (e) {
       showError(e.message);
-      break;
+      return;
     }
   }
   if (!stopFlag) setStatus("done");
@@ -192,7 +209,6 @@ function setStatus(state) {
     btnPause.disabled = true;
     btnSkip.disabled  = true;
     btnReplay.disabled = true;
-
   } else if (state === "playing") {
     isPlaying = true;
     statusDot.classList.add("playing");
@@ -204,13 +220,11 @@ function setStatus(state) {
     btnPause.textContent = "⏸";
     btnSkip.disabled  = false;
     btnReplay.disabled = false;
-
   } else if (state === "paused") {
     isPaused = true;
     statusDot.className = "dot paused";
     statusText.textContent = "Paused";
     btnPause.textContent = "▶";
-
   } else if (state === "stopped") {
     isPlaying = false;
     statusText.textContent = "Stopped";
@@ -218,7 +232,6 @@ function setStatus(state) {
     nowReading.classList.remove("visible");
     progressFill.style.width = "0%";
     progressLbl.textContent  = "";
-
   } else if (state === "done") {
     isPlaying = false;
     statusText.textContent = "Done ✓";
@@ -230,7 +243,6 @@ function setStatus(state) {
     btnSkip.disabled  = true;
     btnReplay.disabled = true;
     nowReading.classList.remove("visible");
-
   } else if (state === "ready") {
     isPlaying = false;
     statusText.textContent = "Ready";
@@ -255,7 +267,7 @@ function showError(msg) {
 }
 function hideError() { errorMsg.classList.remove("visible"); }
 
-// ── Controls ──
+// ── Control handlers ──
 function handlePlayStop() {
   if (isPlaying || statusText.textContent === "Generating audio…") {
     stopFlag = true;
@@ -268,7 +280,6 @@ function handlePlayStop() {
   sentences = splitSentences(selectedText);
   currentSentenceIndex = 0;
   stopFlag = false;
-
   if (provider !== "browser") {
     isPlaying = true;
     playWithAPI();
@@ -305,10 +316,11 @@ function handleReplay() {
   speakFrom(currentSentenceIndex);
 }
 
+// ── Preference setters ──
 function selectGender(g) {
   selectedGender = g;
-  $("btnMale").className   = "tog-btn" + (g === "male"   ? " active" : "");
-  $("btnFemale").className = "tog-btn" + (g === "female" ? " active" : "");
+  $("btnMale").classList.toggle("active",   g === "male");
+  $("btnFemale").classList.toggle("active", g === "female");
   if (isPlaying) { stopFlag = true; window.speechSynthesis.cancel(); setStatus("stopped"); }
   chrome.storage.local.set({ voiceGender: g });
 }
@@ -322,11 +334,11 @@ function selectTone(t) {
 
 function updateSpeed(val) {
   speechRate = parseFloat(val);
-  $("speedVal").textContent = speechRate.toFixed(2).replace(/\.?0+$/, "") + "×";
+  speedVal.textContent = speechRate.toFixed(2).replace(/\.?0+$/, "") + "×";
   chrome.storage.local.set({ speechRate });
 }
 
-// ── Listen for right-click updates ──
+// ── Right-click playback messages ──
 chrome.runtime.onMessage.addListener((req) => {
   if (req.action === "sentenceStart") {
     nowReading.classList.add("visible");
@@ -363,11 +375,10 @@ async function init() {
   if (prefs.toneMode)    selectTone(prefs.toneMode);
   if (prefs.speechRate) {
     speechRate = prefs.speechRate;
-    $("speedSlider").value = speechRate;
-    $("speedVal").textContent = parseFloat(speechRate).toFixed(2).replace(/\.?0+$/, "") + "×";
+    speedSlider.value = speechRate;
+    speedVal.textContent = parseFloat(speechRate).toFixed(2).replace(/\.?0+$/, "") + "×";
   }
 
-  // Update API badge
   if (provider === "openai" && openaiKey) {
     apiBadge.textContent = "OpenAI";
     apiBadge.className = "api-badge active";
@@ -379,7 +390,6 @@ async function init() {
     apiBadge.className = "api-badge browser";
   }
 
-  // Get selected text from active tab
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]?.id) return;
     chrome.scripting.executeScript(
