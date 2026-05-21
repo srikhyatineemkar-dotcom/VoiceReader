@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoiceReader</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 340px;
+      min-height: 420px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f14;
+      color: #f0f0f5;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid #2a2a45;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #6c63ff, #a855f7);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .header-text h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.3px;
+    }
+
+    .header-text p {
+      font-size: 11px;
+      color: #7b7b99;
+      margin-top: 1px;
+    }
+
+    .body {
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+    }
+
+    .text-preview {
+      background: #1a1a2e;
+      border: 1px solid #2a2a45;
+      border-radius: 10px;
+      padding: 12px;
+      min-height: 90px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: #c0c0d8;
+    }
+
+    .text-preview.empty {
+      color: #4a4a66;
+      font-style: italic;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 12px;
+    }
+
+    .text-preview::-webkit-scrollbar {
+      width: 4px;
+    }
+    .text-preview::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .text-preview::-webkit-scrollbar-thumb {
+      background: #3a3a55;
+      border-radius: 4px;
+    }
+
+    .char-count {
+      font-size: 10px;
+      color: #4a4a66;
+      text-align: right;
+      margin-top: -10px;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #7b7b99;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 6px;
+    }
+
+    .voice-toggle {
+      display: flex;
+      background: #1a1a2e;
+      border: 1px solid #2a2a45;
+      border-radius: 10px;
+      padding: 4px;
+      gap: 4px;
+    }
+
+    .voice-btn {
+      flex: 1;
+      padding: 9px 12px;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: #7b7b99;
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .voice-btn.active {
+      background: linear-gradient(135deg, #6c63ff, #a855f7);
+      color: #ffffff;
+      box-shadow: 0 2px 12px rgba(108, 99, 255, 0.4);
+    }
+
+    .voice-btn:hover:not(.active) {
+      background: #2a2a45;
+      color: #c0c0d8;
+    }
+
+    .speed-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .speed-label {
+      font-size: 12px;
+      color: #7b7b99;
+      white-space: nowrap;
+      min-width: 48px;
+    }
+
+    .speed-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      height: 4px;
+      border-radius: 4px;
+      background: #2a2a45;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .speed-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6c63ff, #a855f7);
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(108, 99, 255, 0.5);
+    }
+
+    .speed-value {
+      font-size: 12px;
+      color: #a0a0c0;
+      min-width: 30px;
+      text-align: right;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-play {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #6c63ff, #a855f7);
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      letter-spacing: 0.2px;
+    }
+
+    .btn-play:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(108, 99, 255, 0.45);
+    }
+
+    .btn-play:active {
+      transform: translateY(0);
+    }
+
+    .btn-play:disabled {
+      background: #2a2a45;
+      color: #4a4a66;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .btn-icon {
+      width: 34px;
+      height: 44px;
+      border: 1px solid #2a2a45;
+      border-radius: 10px;
+      background: #1a1a2e;
+      color: #7b7b99;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.18s ease;
+    }
+
+    .btn-icon:hover {
+      background: #2a2a45;
+      color: #c0c0d8;
+    }
+
+    .btn-icon:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .progress-bar-wrap {
+      background: #1a1a2e;
+      border: 1px solid #2a2a45;
+      border-radius: 6px;
+      height: 6px;
+      overflow: hidden;
+      margin-top: -4px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #6c63ff, #a855f7);
+      border-radius: 6px;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #4a4a66;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #4a4a66;
+      flex-shrink: 0;
+    }
+
+    .status-dot.playing {
+      background: #22c55e;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    .status-dot.paused {
+      background: #f59e0b;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    .no-voice-msg {
+      font-size: 11px;
+      color: #f59e0b;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+      border-radius: 7px;
+      padding: 8px 10px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon">🎙️</div>
+    <div class="header-text">
+      <h1>VoiceReader</h1>
+      <p>Text to Speech</p>
+    </div>
+  </div>
+
+  <div class="body">
+    <div>
+      <div class="section-label">Selected Text</div>
+      <div class="text-preview empty" id="textPreview">
+        Select text on any webpage, then open this extension to read it aloud.
+      </div>
+      <div class="char-count" id="charCount"></div>
+    </div>
+
+    <div id="noVoiceMsg" class="no-voice-msg" style="display:none;">
+      ⚠️ No voices found for this gender. Your browser or OS may need voices installed. Falling back to default.
+    </div>
+
+    <div>
+      <div class="section-label">Voice</div>
+      <div class="voice-toggle">
+        <button class="voice-btn active" id="btnMale" onclick="selectGender('male')">
+          👨 Male
+        </button>
+        <button class="voice-btn" id="btnFemale" onclick="selectGender('female')">
+          👩 Female
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Speed</div>
+      <div class="speed-row">
+        <span class="speed-label">Slow</span>
+        <input type="range" class="speed-slider" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0" oninput="updateSpeed(this.value)" />
+        <span class="speed-label" style="text-align:right;">Fast</span>
+        <span class="speed-value" id="speedValue">1.0×</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="status-row">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Ready</span>
+      </div>
+      <div class="progress-bar-wrap" style="margin-top:6px;">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn-play" id="btnPlay" onclick="handlePlay()" disabled>
+        <span id="playIcon">▶</span>
+        <span id="playLabel">Play</span>
+      </button>
+      <button class="btn-icon" id="btnPause" onclick="handlePause()" disabled title="Pause / Resume">⏸</button>
+      <button class="btn-icon" id="btnStop" onclick="handleStop()" disabled title="Stop">⏹</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
