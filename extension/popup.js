@@ -1,13 +1,20 @@
-let selectedText = "";
+// ── State ──
+let selectedText  = "";
 let selectedGender = "female";
-let selectedTone = "natural";
-let speechRate = 1.0;
-let sentences = [];
+let selectedTone  = "natural";
+let speechRate    = 1.0;
+let sentences     = [];
 let currentSentenceIndex = 0;
-let isPlaying = false;
-let isPaused = false;
-let allVoices = [];
+let isPlaying     = false;
+let isPaused      = false;
+let allVoices     = [];
+let stopFlag      = false;
+let currentAPIAudio = null;
+let provider      = "browser";
+let openaiKey     = "";
+let elevenLabsKey = "";
 
+// ── Voice maps ──
 const TONE_PRESETS = {
   natural:  { rateMulti: 1.00, pitch: null },
   podcast:  { rateMulti: 0.95, pitch: 1.05 },
@@ -16,87 +23,177 @@ const TONE_PRESETS = {
   news:     { rateMulti: 1.15, pitch: 1.00 }
 };
 
-const MALE_KEYWORDS   = ["male","david","mark","daniel","james","tom","fred","albert","ralph","bruce","zarvox","junior","bad news","pipe organ","boing","bubbles","deranged","hysterical","trinoids","cellos","bahh","aaron"];
-const FEMALE_KEYWORDS = ["female","samantha","victoria","karen","moira","tessa","fiona","kate","susan","alice","veena","ava","allison","emily","joanna","salli","kendra","kimberly","ivy","amy","emma","olivia","aria","google us english","google uk english female"];
+const OPENAI_VOICES = {
+  male:   { natural:"echo",   podcast:"onyx",    calm:"echo",   professor:"onyx",   news:"onyx"    },
+  female: { natural:"nova",   podcast:"shimmer", calm:"alloy",  professor:"fable",  news:"shimmer" }
+};
 
-// ── DOM refs ──
-const textBox        = document.getElementById("textBox");
-const wordCount      = document.getElementById("wordCount");
-const charCount      = document.getElementById("charCount");
-const nowReading     = document.getElementById("nowReading");
-const nowReadingText = document.getElementById("nowReadingText");
-const btnPlay        = document.getElementById("btnPlay");
-const playIcon       = document.getElementById("playIcon");
-const playLabel      = document.getElementById("playLabel");
-const btnPause       = document.getElementById("btnPause");
-const btnReplay      = document.getElementById("btnReplay");
-const btnSkip        = document.getElementById("btnSkip");
-const statusDot      = document.getElementById("statusDot");
-const statusText     = document.getElementById("statusText");
-const progressFill   = document.getElementById("progressFill");
-const progressLabel  = document.getElementById("progressLabel");
+const EL_VOICES = {
+  male:   { natural:"pNInz6obpgDQGcFmaJgB", podcast:"ErXwobaYiN019PkySvjV", calm:"ErXwobaYiN019PkySvjV", professor:"pNInz6obpgDQGcFmaJgB", news:"pNInz6obpgDQGcFmaJgB" },
+  female: { natural:"21m00Tcm4TlvDq8ikWAM", podcast:"EXAVITQu4vr4xnSDxMaL", calm:"21m00Tcm4TlvDq8ikWAM", professor:"EXAVITQu4vr4xnSDxMaL", news:"21m00Tcm4TlvDq8ikWAM" }
+};
 
-// ── Voice helpers ──
+const MALE_KW   = ["male","david","mark","daniel","james","tom","fred","albert","ralph","bruce","zarvox","junior","bad news","boing","bubbles","deranged","hysterical","trinoids","cellos","bahh","aaron"];
+const FEMALE_KW = ["female","samantha","victoria","karen","moira","tessa","fiona","kate","susan","alice","veena","ava","allison","emily","joanna","salli","kendra","kimberly","ivy","amy","emma","olivia","aria"];
+
+// ── DOM ──
+const $ = id => document.getElementById(id);
+const textBox        = $("textBox");
+const wordCountEl    = $("wordCount");
+const charCountEl    = $("charCount");
+const nowReading     = $("nowReading");
+const nowReadingText = $("nowReadingText");
+const errorMsg       = $("errorMsg");
+const btnPlay        = $("btnPlay");
+const playIcon       = $("playIcon");
+const playLabel      = $("playLabel");
+const btnPause       = $("btnPause");
+const btnReplay      = $("btnReplay");
+const btnSkip        = $("btnSkip");
+const statusDot      = $("statusDot");
+const statusText     = $("statusText");
+const progressFill   = $("progressFill");
+const progressLbl    = $("progressLbl");
+const apiBadge       = $("apiBadge");
+
+// ── Voice loading ──
 function loadVoices() {
-  return new Promise(resolve => {
+  return new Promise(r => {
     const v = window.speechSynthesis.getVoices();
-    if (v.length) { allVoices = v; resolve(); }
-    else { window.speechSynthesis.onvoiceschanged = () => { allVoices = window.speechSynthesis.getVoices(); resolve(); }; }
+    if (v.length) { allVoices = v; r(); }
+    else { window.speechSynthesis.onvoiceschanged = () => { allVoices = window.speechSynthesis.getVoices(); r(); }; }
   });
 }
 
 function pickVoice(gender) {
-  const kw = gender === "male" ? MALE_KEYWORDS : FEMALE_KEYWORDS;
+  const kw = gender === "male" ? MALE_KW : FEMALE_KW;
   const eng = allVoices.filter(v => v.lang.startsWith("en"));
   const pool = eng.length ? eng : allVoices;
   return pool.find(v => kw.some(k => v.name.toLowerCase().includes(k))) || pool[0] || null;
 }
 
-// ── Sentence splitting ──
+// ── Text chunking ──
 function splitSentences(text) {
-  const raw = text.match(/[^.!?]+[.!?]*["']?/g) || [text];
+  const raw = text.match(/[^.!?]+[.!?]*["'\u201d]?\s*/g) || [text];
   return raw.map(s => s.trim()).filter(s => s.length > 0);
 }
 
-// ── Playback ──
-function speakFrom(index) {
-  if (index >= sentences.length) {
-    setStatus("done");
-    return;
+function chunkSentences(sents, maxChars = 3800) {
+  const chunks = []; let cur = "";
+  for (const s of sents) {
+    if (cur.length + s.length > maxChars) { if (cur.trim()) chunks.push(cur.trim()); cur = s; }
+    else cur += " " + s;
   }
+  if (cur.trim()) chunks.push(cur.trim());
+  return chunks.length ? chunks : [sents.join(" ")];
+}
+
+// ── API TTS ──
+async function fetchTTSChunk(text) {
+  if (provider === "openai" && openaiKey) {
+    const voice = OPENAI_VOICES[selectedGender]?.[selectedTone] || "nova";
+    const res = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "tts-1", input: text, voice, response_format: "mp3" })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `OpenAI error ${res.status}`);
+    }
+    return await res.arrayBuffer();
+
+  } else if (provider === "elevenlabs" && elevenLabsKey) {
+    const voiceId = EL_VOICES[selectedGender]?.[selectedTone] || "21m00Tcm4TlvDq8ikWAM";
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: "POST",
+      headers: { "xi-api-key": elevenLabsKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ text, model_id: "eleven_monolingual_v1", voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.detail?.message || `ElevenLabs error ${res.status}`);
+    }
+    return await res.arrayBuffer();
+  }
+  throw new Error("No API provider configured");
+}
+
+function playBuffer(buffer) {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([buffer], { type: "audio/mpeg" });
+    const url  = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.playbackRate = speechRate;
+    currentAPIAudio = audio;
+    audio.play().catch(reject);
+    audio.onended = () => { URL.revokeObjectURL(url); currentAPIAudio = null; resolve(); };
+    audio.onerror = () => { URL.revokeObjectURL(url); currentAPIAudio = null; reject(new Error("Playback error")); };
+  });
+}
+
+async function playWithAPI() {
+  stopFlag = false;
+  setStatus("loading");
+  const chunks = chunkSentences(sentences, provider === "elevenlabs" ? 2400 : 3800);
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (stopFlag) break;
+    updateTracker(i, chunks.length, chunks[i]);
+    try {
+      const buffer = await fetchTTSChunk(chunks[i]);
+      if (stopFlag) break;
+      setStatus("playing");
+      await playBuffer(buffer);
+    } catch (e) {
+      showError(e.message);
+      break;
+    }
+  }
+  if (!stopFlag) setStatus("done");
+}
+
+// ── Browser TTS ──
+function speakFrom(index) {
+  if (index >= sentences.length || stopFlag) { setStatus("done"); return; }
   const tone = TONE_PRESETS[selectedTone] || TONE_PRESETS.natural;
   const utt  = new SpeechSynthesisUtterance(sentences[index]);
   utt.rate   = speechRate * tone.rateMulti;
   utt.pitch  = tone.pitch !== null ? tone.pitch : (selectedGender === "female" ? 1.2 : 0.85);
-  utt.volume = 1;
   const voice = pickVoice(selectedGender);
   if (voice) utt.voice = voice;
-
   currentSentenceIndex = index;
-  updateTracker(index);
-
-  utt.onend = () => { speakFrom(index + 1); };
+  updateTracker(index, sentences.length, sentences[index]);
+  utt.onend   = () => speakFrom(index + 1);
   utt.onerror = (e) => { if (e.error !== "interrupted") setStatus("stopped"); };
-
   window.speechSynthesis.speak(utt);
 }
 
-function updateTracker(index) {
-  const pct = sentences.length ? Math.round(((index + 1) / sentences.length) * 100) : 0;
+// ── Tracker ──
+function updateTracker(index, total, sentence) {
+  const pct = total ? Math.round(((index + 1) / total) * 100) : 0;
   progressFill.style.width = pct + "%";
-  progressLabel.textContent = sentences.length > 1 ? `${index + 1} / ${sentences.length}` : "";
-  if (sentences[index]) {
-    nowReading.classList.add("visible");
-    nowReadingText.textContent = sentences[index];
-  }
+  progressLbl.textContent  = total > 1 ? `${index + 1} / ${total}` : "";
+  nowReading.classList.add("visible");
+  nowReadingText.textContent = sentence || "";
 }
 
-// ── UI state machine ──
+// ── Status machine ──
 function setStatus(state) {
   statusDot.className = "dot";
   isPaused = false;
+  hideError();
 
-  if (state === "playing") {
+  if (state === "loading") {
+    statusText.textContent = "Generating audio…";
+    playIcon.textContent = "⏳";
+    playLabel.textContent = "Loading";
+    btnPlay.disabled = false;
+    btnPause.disabled = true;
+    btnSkip.disabled  = true;
+    btnReplay.disabled = true;
+
+  } else if (state === "playing") {
     isPlaying = true;
     statusDot.classList.add("playing");
     statusText.textContent = "Playing";
@@ -105,32 +202,35 @@ function setStatus(state) {
     btnPlay.disabled = false;
     btnPause.disabled = false;
     btnPause.textContent = "⏸";
-    btnSkip.disabled = false;
+    btnSkip.disabled  = false;
     btnReplay.disabled = false;
+
   } else if (state === "paused") {
     isPaused = true;
     statusDot.className = "dot paused";
     statusText.textContent = "Paused";
     btnPause.textContent = "▶";
+
   } else if (state === "stopped") {
     isPlaying = false;
     statusText.textContent = "Stopped";
     resetControls();
     nowReading.classList.remove("visible");
     progressFill.style.width = "0%";
-    progressLabel.textContent = "";
+    progressLbl.textContent  = "";
+
   } else if (state === "done") {
     isPlaying = false;
     statusText.textContent = "Done ✓";
     progressFill.style.width = "100%";
-    progressLabel.textContent = `${sentences.length} / ${sentences.length}`;
     playIcon.textContent = "▶";
     playLabel.textContent = "Play Again";
     btnPlay.disabled = false;
     btnPause.disabled = true;
-    btnSkip.disabled = true;
+    btnSkip.disabled  = true;
     btnReplay.disabled = true;
     nowReading.classList.remove("visible");
+
   } else if (state === "ready") {
     isPlaying = false;
     statusText.textContent = "Ready";
@@ -148,16 +248,31 @@ function resetControls() {
   btnReplay.disabled = true;
 }
 
-// ── Button handlers ──
+function showError(msg) {
+  errorMsg.textContent = "⚠ " + msg;
+  errorMsg.classList.add("visible");
+  setStatus("stopped");
+}
+function hideError() { errorMsg.classList.remove("visible"); }
+
+// ── Controls ──
 function handlePlayStop() {
-  if (isPlaying) {
+  if (isPlaying || statusText.textContent === "Generating audio…") {
+    stopFlag = true;
+    if (currentAPIAudio) { currentAPIAudio.pause(); currentAPIAudio = null; }
     window.speechSynthesis.cancel();
     setStatus("stopped");
+    return;
+  }
+  if (!selectedText) return;
+  sentences = splitSentences(selectedText);
+  currentSentenceIndex = 0;
+  stopFlag = false;
+
+  if (provider !== "browser") {
+    isPlaying = true;
+    playWithAPI();
   } else {
-    if (!selectedText) return;
-    window.speechSynthesis.cancel();
-    sentences = splitSentences(selectedText);
-    currentSentenceIndex = 0;
     setStatus("playing");
     speakFrom(0);
   }
@@ -166,73 +281,68 @@ function handlePlayStop() {
 function handlePause() {
   if (!isPlaying) return;
   if (isPaused) {
-    window.speechSynthesis.resume();
+    if (currentAPIAudio) currentAPIAudio.play();
+    else window.speechSynthesis.resume();
     setStatus("playing");
   } else {
-    window.speechSynthesis.pause();
+    if (currentAPIAudio) currentAPIAudio.pause();
+    else window.speechSynthesis.pause();
     setStatus("paused");
   }
 }
 
 function handleSkip() {
-  if (!isPlaying) return;
+  if (!isPlaying || provider !== "browser") return;
   window.speechSynthesis.cancel();
   const next = currentSentenceIndex + 1;
-  if (next < sentences.length) {
-    speakFrom(next);
-  } else {
-    setStatus("done");
-  }
+  if (next < sentences.length) speakFrom(next);
+  else setStatus("done");
 }
 
 function handleReplay() {
-  if (!isPlaying) return;
+  if (!isPlaying || provider !== "browser") return;
   window.speechSynthesis.cancel();
   speakFrom(currentSentenceIndex);
 }
 
-// ── Gender / Tone / Speed ──
-function selectGender(gender) {
-  selectedGender = gender;
-  document.getElementById("btnMale").className   = "tog-btn" + (gender === "male"   ? " active" : "");
-  document.getElementById("btnFemale").className = "tog-btn" + (gender === "female" ? " active" : "");
-  if (isPlaying) { window.speechSynthesis.cancel(); setStatus("stopped"); }
-  chrome.storage.local.set({ voiceGender: gender });
+function selectGender(g) {
+  selectedGender = g;
+  $("btnMale").className   = "tog-btn" + (g === "male"   ? " active" : "");
+  $("btnFemale").className = "tog-btn" + (g === "female" ? " active" : "");
+  if (isPlaying) { stopFlag = true; window.speechSynthesis.cancel(); setStatus("stopped"); }
+  chrome.storage.local.set({ voiceGender: g });
 }
 
-function selectTone(tone) {
-  selectedTone = tone;
-  document.querySelectorAll(".tone-btn").forEach(b => {
-    b.classList.toggle("active", b.dataset.tone === tone);
-  });
-  if (isPlaying) { window.speechSynthesis.cancel(); setStatus("stopped"); }
-  chrome.storage.local.set({ toneMode: tone });
+function selectTone(t) {
+  selectedTone = t;
+  document.querySelectorAll(".tone-btn").forEach(b => b.classList.toggle("active", b.dataset.tone === t));
+  if (isPlaying) { stopFlag = true; window.speechSynthesis.cancel(); setStatus("stopped"); }
+  chrome.storage.local.set({ toneMode: t });
 }
 
 function updateSpeed(val) {
   speechRate = parseFloat(val);
-  document.getElementById("speedVal").textContent = speechRate.toFixed(2).replace(/0$/, "") + "×";
+  $("speedVal").textContent = speechRate.toFixed(2).replace(/\.?0+$/, "") + "×";
   chrome.storage.local.set({ speechRate });
 }
 
-// ── Listen for sentence updates from content script (context menu flow) ──
-chrome.runtime.onMessage.addListener((request) => {
-  if (request.action === "sentenceStart") {
+// ── Listen for right-click updates ──
+chrome.runtime.onMessage.addListener((req) => {
+  if (req.action === "sentenceStart") {
     nowReading.classList.add("visible");
-    nowReadingText.textContent = request.sentence;
-    const pct = request.total ? Math.round(((request.index + 1) / request.total) * 100) : 0;
+    nowReadingText.textContent = req.sentence;
+    const pct = req.total ? Math.round(((req.index + 1) / req.total) * 100) : 0;
     progressFill.style.width = pct + "%";
-    progressLabel.textContent = request.total > 1 ? `${request.index + 1} / ${request.total}` : "";
+    progressLbl.textContent  = req.total > 1 ? `${req.index + 1} / ${req.total}` : "";
     statusDot.className = "dot playing";
-    statusText.textContent = "Playing via right-click";
+    statusText.textContent = "Playing";
     btnPause.disabled = false;
-    btnSkip.disabled = false;
-    btnReplay.disabled = false;
   }
-  if (request.action === "playbackEnded") {
+  if (req.action === "playbackEnded") {
     nowReading.classList.remove("visible");
     statusDot.className = "dot";
     statusText.textContent = "Done ✓";
+    progressFill.style.width = "100%";
   }
 });
 
@@ -240,16 +350,36 @@ chrome.runtime.onMessage.addListener((request) => {
 async function init() {
   await loadVoices();
 
-  chrome.storage.local.get(["voiceGender", "speechRate", "toneMode"], (prefs) => {
-    if (prefs.voiceGender) selectGender(prefs.voiceGender);
-    if (prefs.toneMode)   selectTone(prefs.toneMode);
-    if (prefs.speechRate) {
-      speechRate = prefs.speechRate;
-      document.getElementById("speedSlider").value = speechRate;
-      document.getElementById("speedVal").textContent = parseFloat(speechRate).toFixed(2).replace(/0$/, "") + "×";
-    }
-  });
+  const prefs = await new Promise(r => chrome.storage.local.get([
+    "voiceGender", "speechRate", "toneMode",
+    "provider", "openaiKey", "elevenLabsKey"
+  ], r));
 
+  provider      = prefs.provider      || "browser";
+  openaiKey     = prefs.openaiKey     || "";
+  elevenLabsKey = prefs.elevenLabsKey || "";
+
+  if (prefs.voiceGender) selectGender(prefs.voiceGender);
+  if (prefs.toneMode)    selectTone(prefs.toneMode);
+  if (prefs.speechRate) {
+    speechRate = prefs.speechRate;
+    $("speedSlider").value = speechRate;
+    $("speedVal").textContent = parseFloat(speechRate).toFixed(2).replace(/\.?0+$/, "") + "×";
+  }
+
+  // Update API badge
+  if (provider === "openai" && openaiKey) {
+    apiBadge.textContent = "OpenAI";
+    apiBadge.className = "api-badge active";
+  } else if (provider === "elevenlabs" && elevenLabsKey) {
+    apiBadge.textContent = "ElevenLabs";
+    apiBadge.className = "api-badge active";
+  } else {
+    apiBadge.textContent = "Browser";
+    apiBadge.className = "api-badge browser";
+  }
+
+  // Get selected text from active tab
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]?.id) return;
     chrome.scripting.executeScript(
@@ -261,14 +391,14 @@ async function init() {
           textBox.textContent = text;
           textBox.classList.remove("empty");
           const words = text.trim().split(/\s+/).length;
-          wordCount.textContent = words.toLocaleString() + " words";
-          charCount.textContent = text.length.toLocaleString() + " chars";
+          wordCountEl.textContent = words.toLocaleString() + " words";
+          charCountEl.textContent = text.length.toLocaleString() + " chars";
           btnPlay.disabled = false;
         } else {
-          textBox.textContent = "Select text on any page, then click Play — or right-click to listen instantly.";
+          textBox.textContent = "Select text on any page, then click Play — or right-click for instant audio.";
           textBox.classList.add("empty");
-          wordCount.textContent = "";
-          charCount.textContent = "";
+          wordCountEl.textContent = "";
+          charCountEl.textContent = "";
           btnPlay.disabled = true;
         }
       }

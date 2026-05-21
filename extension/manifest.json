@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "VoiceReader – Instant Text to Speech",
-  "version": "2.0.0",
-  "description": "Select text, right-click, and listen instantly. Male/female voices, tone modes, speed control — no account needed.",
+  "version": "3.0.0",
+  "description": "Select text and listen instantly. Powered by OpenAI or ElevenLabs for near-human voices. Male/female, tone modes, speed control — no account needed for basic use.",
   "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://api.elevenlabs.io/*"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -17,6 +21,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "options_page": "options.html",
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
