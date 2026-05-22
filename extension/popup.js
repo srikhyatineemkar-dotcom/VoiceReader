@@ -143,18 +143,24 @@ function selectGender(g) {
   $("btnMale").classList.toggle("active",   g === "male");
   $("btnFemale").classList.toggle("active", g === "female");
   chrome.storage.local.set({ voiceGender: g });
+  // Apply immediately if already playing
+  send({ action: "updateSettings", gender: g });
 }
 
 function selectTone(t) {
   selectedTone = t;
   document.querySelectorAll(".tone-btn").forEach(b => b.classList.toggle("active", b.dataset.tone === t));
   chrome.storage.local.set({ toneMode: t });
+  // Apply immediately if already playing
+  send({ action: "updateSettings", tone: t });
 }
 
 function updateSpeed(val) {
   speechRate = parseFloat(val);
   speedVal.textContent = speechRate.toFixed(2).replace(/\.?0+$/, "") + "×";
   chrome.storage.local.set({ speechRate });
+  // Speed applies instantly to current audio — no restart needed
+  send({ action: "updateSettings", rate: speechRate });
 }
 
 // ── Listen for updates pushed from content.js ──

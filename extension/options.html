@@ -111,6 +111,23 @@
     .voice-opt.selected .vo-gender { color: #8878d8; }
     .voice-opt:hover:not(.selected) { border-color: #c8c8e8; }
 
+    /* ── QUALITY BAR ── */
+    .quality-bar {
+      display: flex; align-items: center; justify-content: center;
+      gap: 6px; margin-top: 14px; padding: 10px 12px;
+      background: #f8f8fe; border-radius: 10px;
+      border: 1px solid #ebebf8;
+    }
+    .qb-item {
+      text-align: center; font-size: 10px; font-weight: 600;
+      padding: 6px 10px; border-radius: 8px; line-height: 1.5;
+    }
+    .qb-item span { font-size: 9px; font-weight: 400; display: block; }
+    .qb-low  { background: #f0f0f0; color: #8e8ea0; }
+    .qb-mid  { background: #e8f4ff; color: #2563eb; }
+    .qb-high { background: #f0eeff; color: #6c5ce7; }
+    .qb-arrow { font-size: 12px; color: #c0c0d0; }
+
     hr { border: none; border-top: 1px solid #f0f0f8; margin: 16px 0; }
 
     /* ── BUTTONS ── */
@@ -164,27 +181,34 @@
     </div>
 
     <div class="info-banner">
-      <strong>No API key? No problem.</strong> VoiceReader works free using your browser's built-in voices. Add an OpenAI or ElevenLabs key to unlock near-human quality.
+      <strong>Why does the voice sound robotic?</strong> The default "Browser" mode uses your system's built-in text-to-speech, which sounds mechanical. Switch to <strong>OpenAI</strong> or <strong>ElevenLabs</strong> below for voices that sound like a real human — indistinguishable from a podcast host or news reader.
     </div>
 
     <div class="card">
-      <div class="card-title"><span class="card-title-icon">🔊</span> Voice Provider</div>
+      <div class="card-title"><span class="card-title-icon">🔊</span> Voice Provider — pick your quality level</div>
       <div class="provider-grid">
         <button class="provider-btn active" id="provBrowser" data-p="browser">
           <div class="pb-icon">🌐</div>
           <span class="pb-name">Browser</span>
-          <span class="pb-desc">Free · Offline · Instant</span>
+          <span class="pb-desc">Free · Offline · Robotic</span>
         </button>
         <button class="provider-btn" id="provOpenAI" data-p="openai">
           <div class="pb-icon">⚡</div>
           <span class="pb-name">OpenAI</span>
-          <span class="pb-desc">Near-human · 6 voices</span>
+          <span class="pb-desc">Human-like · 6 voices · ~$0.015/1K chars</span>
         </button>
         <button class="provider-btn" id="provElevenLabs" data-p="elevenlabs">
           <div class="pb-icon">🎭</div>
           <span class="pb-name">ElevenLabs</span>
-          <span class="pb-desc">Most natural · Expressive</span>
+          <span class="pb-desc">Most realistic · Expressive · Free tier</span>
         </button>
+      </div>
+      <div class="quality-bar">
+        <div class="qb-item qb-low">🤖 Browser<br><span>Basic</span></div>
+        <div class="qb-arrow">→</div>
+        <div class="qb-item qb-mid">⚡ OpenAI<br><span>Very natural</span></div>
+        <div class="qb-arrow">→</div>
+        <div class="qb-item qb-high">🎭 ElevenLabs<br><span>Most human</span></div>
       </div>
     </div>
 

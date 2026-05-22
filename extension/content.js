@@ -122,13 +122,15 @@ function speakBrowserFrom(index) {
 }
 
 // ── API TTS playback ──
-async function speakAPIChunks() {
+async function speakAPIChunks(startIndex = 0) {
   const maxChars = cfg.provider === "elevenlabs" ? 2400 : 3800;
-  chunks = chunkText(sentences, maxChars);
-  playState = "loading";
-  notify("statusChange", { state: "loading" });
+  if (startIndex === 0) chunks = chunkText(sentences, maxChars);
+  if (startIndex === 0) {
+    playState = "loading";
+    notify("statusChange", { state: "loading" });
+  }
 
-  for (let i = 0; i < chunks.length; i++) {
+  for (let i = startIndex; i < chunks.length; i++) {
     if (stopFlag) break;
     currentIndex = i;
     notify("sentenceStart", { index: i, total: chunks.length, sentence: chunks[i] });
@@ -244,6 +246,38 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 
   } else if (req.action === "replay") {
     replaySentence();
+    sendResponse({ ok: true });
+
+  } else if (req.action === "updateSettings") {
+    // Merge new settings into cfg
+    if (req.gender !== undefined) cfg.gender = req.gender;
+    if (req.tone   !== undefined) cfg.tone   = req.tone;
+    if (req.rate   !== undefined) cfg.rate   = parseFloat(req.rate);
+
+    // Speed: apply instantly to current audio element (no restart needed)
+    if (req.rate !== undefined && currentAudio) {
+      currentAudio.playbackRate = parseFloat(req.rate) || 1;
+    }
+
+    // Voice / tone changed while playing → restart from current position
+    const voiceChanged = req.gender !== undefined || req.tone !== undefined;
+    if (voiceChanged && playState === "playing") {
+      if (cfg.provider === "browser") {
+        window.speechSynthesis.cancel();
+        speakBrowserFrom(currentIndex);
+      } else {
+        // API: stop current chunk, re-fetch and play from here
+        const resumeFrom = currentIndex;
+        stopFlag = true;
+        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+        setTimeout(() => {
+          stopFlag = false;
+          playState = "loading";
+          notify("statusChange", { state: "loading" });
+          speakAPIChunks(resumeFrom);
+        }, 80);
+      }
+    }
     sendResponse({ ok: true });
 
   } else if (req.action === "playText") {
