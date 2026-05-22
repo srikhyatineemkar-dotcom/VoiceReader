@@ -42,6 +42,27 @@ async function fetchElevenLabs(text, apiKey, voiceId) {
   return bufferToBase64(await res.arrayBuffer());
 }
 
+// ── Ensure content script is injected, then send a message ──
+async function sendToTab(tabId, msg) {
+  try {
+    await chrome.tabs.sendMessage(tabId, msg);
+  } catch (e) {
+    // Content script not present — inject it, then retry once
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files:  ["content.js"]
+      });
+      // Small delay so the script can register its listeners
+      await new Promise(r => setTimeout(r, 80));
+      await chrome.tabs.sendMessage(tabId, msg);
+    } catch (e2) {
+      // Page doesn't allow injection (chrome://, about:, PDF, etc.)
+      console.warn("[VoiceReader] Cannot inject on this page:", e2.message);
+    }
+  }
+}
+
 // ── Context menu click → send to content script ──
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "voicereader-play" || !info.selectionText) return;
@@ -51,7 +72,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     "voiceGender", "speechRate", "toneMode"
   ]);
 
-  chrome.tabs.sendMessage(tab.id, {
+  sendToTab(tab.id, {
     action:        "playText",
     text:          info.selectionText.trim(),
     provider:      prefs.provider      || "browser",
