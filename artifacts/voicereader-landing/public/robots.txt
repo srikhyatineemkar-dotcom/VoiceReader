@@ -1,2 +1,3 @@
 User-agent: *
 Allow: /
+Sitemap: https://text-reader--srikhyati19.replit.app/sitemap.xml
