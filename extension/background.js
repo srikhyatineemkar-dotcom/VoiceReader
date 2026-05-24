@@ -24,7 +24,15 @@ async function fetchOpenAI(text, apiKey, voice) {
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error(e?.error?.message || `OpenAI error ${res.status}`);
+    const raw = e?.error?.message || "";
+    const status = res.status;
+    if (status === 401 || raw.includes("invalid_api_key") || raw.includes("Incorrect API key"))
+      throw new Error("Invalid OpenAI API key. Check your key in Settings.");
+    if (status === 429 || raw.includes("quota") || raw.includes("exceeded"))
+      throw new Error("OpenAI account has no credits. Add billing at platform.openai.com/account/billing — or switch to ElevenLabs (free tier available).");
+    if (status === 400)
+      throw new Error("OpenAI request error: " + (raw || "bad request"));
+    throw new Error("OpenAI error " + status + (raw ? ": " + raw : ""));
   }
   return bufferToBase64(await res.arrayBuffer());
 }
@@ -33,11 +41,19 @@ async function fetchElevenLabs(text, apiKey, voiceId) {
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: "POST",
     headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ text, model_id: "eleven_turbo_v2_5", voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
+    body: JSON.stringify({ text, model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error(e?.detail?.message || `ElevenLabs error ${res.status}`);
+    const raw = typeof e?.detail === "string" ? e.detail : (e?.detail?.message || "");
+    const status = res.status;
+    if (status === 401 || raw.toLowerCase().includes("invalid") || raw.toLowerCase().includes("unauthorized"))
+      throw new Error("Invalid ElevenLabs API key. Check your key in Settings.");
+    if (status === 422 || raw.toLowerCase().includes("quota") || raw.toLowerCase().includes("limit"))
+      throw new Error("ElevenLabs free tier limit reached (10,000 chars/month). Upgrade at elevenlabs.io or switch to OpenAI.");
+    if (raw.includes("deprecated") || raw.includes("not available on the free tier"))
+      throw new Error("ElevenLabs model error — please reload the extension from the latest zip.");
+    throw new Error("ElevenLabs error " + status + (raw ? ": " + raw : ""));
   }
   return bufferToBase64(await res.arrayBuffer());
 }
