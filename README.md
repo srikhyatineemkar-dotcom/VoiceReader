@@ -47,4 +47,4 @@ Currently under active development.
 
 ## Author
 
-**Khyati Vardhan**
+**N. Srimalinya Khyati Vardhan**
